@@ -6,19 +6,20 @@ class CartonService extends Service {
     // 创建漫画
     async carton(cartonInfo) {
         const { ctx } = this;
-
-        // 获取用户id
+        // if(!this.ctx.session.userInfo) return {code: -400, message: '该用户未登录'};
+        // // 获取用户id
         // let uid = ctx.session.userInfo._id;
         // 获取分类id
         // 测试id
-        let uid = 1;
-        cartonInfo.categoryId = 2;
-
+        let uids = [11, 12, 13, 14, 15, 17,18,19,20]
+        let random = Math.ceil(Math.random()*9) - 1
+        let uid = uids[random];
         let sql = `insert into carton(uid,cover,profile,cartonTitle,owner,finished,imgs,introduce,categoryId) values("${uid}","${cartonInfo.cover}","${cartonInfo.profile}",
         "${cartonInfo.cartonTitle}","${cartonInfo.owner}","${cartonInfo.finished}","${cartonInfo.imgs}","${cartonInfo.introduce}","${cartonInfo.categoryId}")`;
         try {
             var result = await ctx.app.mysql.query(sql);
         } catch (e) {
+            console.log(e.message);
             return { code: -5001, message: '数据插入失败，参数不完整或填写错误' }
         }
 
@@ -231,6 +232,51 @@ class CartonService extends Service {
         } catch (e) {
             return { code: -2000, message: '系统繁忙，请稍后再试' }
         }
+        if (JSON.stringify(cartons) === '[]') return { code: 404, message: '你访问的漫画不存在' }
+        return { code: 200, data: cartons };
+    }
+    // 二级筛选漫画 分类和完结
+    async screen(params) {
+        let {categoryId, finished} = params;
+        let sql = `
+        select * from (select c._id,c.cover,c.profile,c.cartonTitle,c.owner,c.finished,c.imgs,c.introduce,c.create_at,
+            c.views,c.likes,c.comments,c.categoryId,c.uid,c.username,c.avatar,c.email,cate.title from 
+            (select c._id,c.cover,c.profile,c.cartonTitle,c.owner,c.finished,c.imgs,c.introduce,c.create_at,
+            c.views,c.likes,c.comments,c.categoryId,u.uid,u.username,u.avatar,u.email from carton c
+            left join user u
+            on c.uid=u.uid) c
+            left join category cate
+            on c.categoryId=cate._id) r where r.categoryId="${categoryId}" and r.finished="${finished}"
+            limit 0, 20
+        `;
+        try {
+            var cartons = await this.ctx.app.mysql.query(sql);
+        } catch (e) {
+            return { code: -2000, message: '系统繁忙，请稍后再试' }
+        }
+        if (JSON.stringify(cartons) === '[]') return { code: 404, message: '你访问的漫画不存在' }
+        return { code: 200, data: cartons };
+    }
+    // 根据用户发表漫画
+    async publish(idObj) {
+        let {uid} = idObj;
+        let sql = `
+        select * from (select c._id,c.cover,c.profile,c.cartonTitle,c.owner,c.finished,c.imgs,c.introduce,c.create_at,
+            c.views,c.likes,c.comments,c.categoryId,c.uid,c.username,c.avatar,c.email,cate.title from 
+            (select c._id,c.cover,c.profile,c.cartonTitle,c.owner,c.finished,c.imgs,c.introduce,c.create_at,
+            c.views,c.likes,c.comments,c.categoryId,u.uid,u.username,u.avatar,u.email from carton c
+            left join user u
+            on c.uid=u.uid) c
+            left join category cate
+            on c.categoryId=cate._id) r where r.uid="${uid}"
+            limit 0, 20
+        `;
+        try {
+            var cartons = await this.ctx.app.mysql.query(sql);
+        } catch (e) {
+            return { code: -2000, message: '系统繁忙，请稍后再试' }
+        }
+        if (JSON.stringify(cartons) === '[]') return { code: 404, message: '你访问的漫画不存在' }
         return { code: 200, data: cartons };
     }
     // 搜索漫画结果
@@ -276,34 +322,47 @@ class CartonService extends Service {
             return { code: -2000, message: '系统繁忙，请稍后再试' };
         }
         if (JSON.stringify(carton) === '[]') return { code: 404, message: '你访问的漫画不存在' };
+        if(!this.ctx.session.userInfo) return {code: -400, message: '该用户未登录'};
         // 从缓存获取用户id
         let { uid } = this.ctx.session.userInfo;
-        // 把用户id和漫画id存进点赞表中
-        let likeSql = `insert into like(uid,cid) values("${uid}","${cartonId}")`;
-        try {
-            await ctx.app.mysql.query(likeSql);
-        } catch (e) {
-            return { code: -5001, message: '数据插入失败，参数不完整或填写错误' }
-        }
+        // let uid = 1;
         // 查看用户是否重复点赞同一漫画
-        let likeSql = `select * from like where uid="${uid}"`;
-        let result = this.ctx.app.mysql.query(likeSql);
-        // 根据查询结果
-        // 根据id查找用户id和文章id
+        let isLikeSql = `select * from likes where uid="${uid}"`;
+        let result = await this.ctx.app.mysql.query(isLikeSql);
+        // 更新点赞表中
+        let updateLikeSql = `update likes set state=1 where cid="${cartonId}" and uid="${uid}"`;
+        try {
+            var updateRes = await this.ctx.app.mysql.query(updateLikeSql);
+        } catch (e) {
+            return { code: -5002, message: '数据更新失败，参数不完整或填写错误' }
+        }
+        for (var i = 0; i < result.length; i++) {
+            // 根据查询结果
+            if (result[i].uid === uid && result[i].cid == cartonId && result[i].state === 1) {
+                return { code: -6000, message: '点赞失败' }
+            }
+        }
+        // 如果没有更新数据 ===== 数据表里没有该记录 就增加记录
+        if (updateRes.changedRows === 0) {
+            // 把用户id和漫画id存进点赞表中
+            let likeSql = `insert into likes(uid,cid,state) values("${uid}","${cartonId}",1)`;
+            try {
+                await this.ctx.app.mysql.query(likeSql);
+            } catch (e) {
+                // console.log(e.message);
+                return { code: -5001, message: '数据插入失败，参数不完整或填写错误' }
+            }
+        }
         // 对应漫画的点赞量+1
         let likes = carton[0].likes + 1;
-        // // 把点赞漫画id缓存起来
-        // this.ctx.session.userInfo.likeCartonId = cartonId;
-        // // 解构赋值
-        // const { cartonId, uid } = this.ctx.session.userInfo;
-        // // 判断用户是否在同一漫画上点赞多次
-        // if(uid === uid && cartonId === likeCartonId) return;
         // 保存在数据库中去
-        await this.ctx.app.mysql.query(`update carton set likes=${likes} where _id=${cartonId}`);
-        return { code: 200, message:'点赞成功'};
+        await this.ctx.app.mysql.query(`update carton set likes="${likes}" where _id="${cartonId}"`);
+        // 把刚刚更新的关注表返回出去
+        let res = await this.ctx.app.mysql.query(`select * from likes where cid="${cartonId}" and uid="${uid}"`);
+        return { code: 200, data: res[0], message: '点赞成功' };
     }
-     // 漫画取消点赞
-     async cancelLike(likeObj) {
+    // 漫画取消点赞
+    async cancelLike(likeObj) {
         // 获取用户点赞的漫画id
         let cartonId = likeObj.id;
         // 根据id查找漫画
@@ -323,13 +382,163 @@ class CartonService extends Service {
             return { code: -2000, message: '系统繁忙，请稍后再试' };
         }
         if (JSON.stringify(carton) === '[]') return { code: 404, message: '你访问的漫画不存在' }
-        // 对应漫画的点赞量+1
+        if(!this.ctx.session.userInfo) return {code: -400, message: '该用户未登录'};
+        // 从缓存获取用户id
+        let { uid } = this.ctx.session.userInfo;
+        // let uid = 1;
+        // 查看用户是否重复点赞同一漫画
+        let isLikeSql = `select * from likes where uid="${uid}"`;
+        let result = await this.ctx.app.mysql.query(isLikeSql);
+        // 根据查询结果
+        for (var i = 0; i < result.length; i++) {
+            // 根据查询结果
+            if (result[i].uid === uid && result[i].cid == cartonId && result[i].state === -1) {
+                return { code: -6001, message: '取消点赞失败' }
+            }
+        }
+        // 更新点赞表中
+        let likeSql = `update likes set state=-1 where cid="${cartonId}" and uid="${uid}"`;
+        try {
+            await this.ctx.app.mysql.query(likeSql);
+        } catch (e) {
+            return { code: -5002, message: '数据更新失败，参数不完整或填写错误' }
+        }
+        // 对应漫画的点赞量-1
         let likes = carton[0].likes - 1;
         // 不能为负数
-        if(likes<0) return;
+        if (likes < 0) return;
         // 保存在数据库中去
         await this.ctx.app.mysql.query(`update carton set likes=${likes} where _id=${cartonId}`);
-        return { code: 200, message:'取消点赞成功'};
+        // 把刚刚更新的关注表返回出去
+        let res = await this.ctx.app.mysql.query(`select * from likes where cid="${cartonId}" and uid="${uid}"`);
+        return { code: 200, data: res[0], message: '取消点赞成功' };
     }
+    // 漫画关注
+    async followCarton(follow) {
+        let cartonId = follow.id;
+        // 根据id查找漫画
+        let findOneSql = `
+        select * from (select c._id,c.cover,c.profile,c.cartonTitle,c.owner,c.finished,c.imgs,c.introduce,c.create_at,
+            c.views,c.likes,c.comments,c.categoryId,c.uid,c.username,c.avatar,c.email,cate.title from 
+            (select c._id,c.cover,c.profile,c.cartonTitle,c.owner,c.finished,c.imgs,c.introduce,c.create_at,
+            c.views,c.likes,c.comments,c.categoryId,u.uid,u.username,u.avatar,u.email from carton c
+            left join user u
+            on c.uid=u.uid) c
+            left join category cate
+            on c.categoryId=cate._id) r where r._id="${cartonId}"
+        `;
+        try {
+            var carton = await this.ctx.app.mysql.query(findOneSql);
+        } catch (e) {
+            return { code: -2000, message: '系统繁忙，请稍后再试' };
+        }
+        if (JSON.stringify(carton) === '[]') return { code: 404, message: '你访问的漫画不存在' }
+        if (!this.ctx.session.userInfo) return { code: -400, message: '该用户未登录' };
+        // 从缓存获取用户id
+        let { uid } = this.ctx.session.userInfo;
+        // let uid = 1;
+        // 查看用户是否重复关注同一漫画
+        let isFolloweSql = `select * from follow where uid="${uid}"`;
+        let result = await this.ctx.app.mysql.query(isFolloweSql);
+        // 更新关注表语句
+        let updateFollowSql = `update follow set status=1 where cid="${cartonId}" and uid="${uid}"`;
+        try {
+            var updateRes = await this.ctx.app.mysql.query(updateFollowSql);
+        } catch (e) {
+            return { code: -5002, message: '数据更新失败，参数不完整或填写错误' }
+        }
+        for (var i = 0; i < result.length; i++) {
+            // 根据查询结果
+            if (result[i].uid === uid && result[i].cid == cartonId && result[i].status === 1) {
+                return { code: -6000, message: '关注失败' }
+            }
+        }
+        // 如果没有更新数据 ===== 数据表里没有该记录 就增加记录
+        if (updateRes.changedRows === 0) {
+            // 把用户id和漫画id存进关注表中
+            let followSql = `insert into follow(uid,cid,status) values("${uid}","${cartonId}",1)`;
+            try {
+                await this.ctx.app.mysql.query(followSql);
+            } catch (e) {
+                // console.log(e.message);
+                return { code: -5001, message: '数据插入失败，参数不完整或填写错误' }
+            }
+        }
+        // 把刚刚更新的关注表返回出去
+        let res = await this.ctx.app.mysql.query(`select * from follow where cid="${cartonId}" and uid="${uid}"`);
+        return { code: 200, data: res[0], message: '关注成功' };
+    }
+    // 漫画取消关注
+    async cancelFollow(follow) {
+        // 获取用户点赞的漫画id
+        let cartonId = follow.id;
+        // 根据id查找漫画
+        let findOneSql = `
+        select * from (select c._id,c.cover,c.profile,c.cartonTitle,c.owner,c.finished,c.imgs,c.introduce,c.create_at,
+        c.views,c.likes,c.comments,c.categoryId,c.uid,c.username,c.avatar,c.email,cate.title from 
+        (select c._id,c.cover,c.profile,c.cartonTitle,c.owner,c.finished,c.imgs,c.introduce,c.create_at,
+        c.views,c.likes,c.comments,c.categoryId,u.uid,u.username,u.avatar,u.email from carton c
+        left join user u
+        on c.uid=u.uid) c
+        left join category cate
+        on c.categoryId=cate._id) r where r._id="${cartonId}"
+        `;
+        try {
+            var carton = await this.ctx.app.mysql.query(findOneSql);
+        } catch (e) {
+            return { code: -2000, message: '系统繁忙，请稍后再试' };
+        }
+        if (JSON.stringify(carton) === '[]') return { code: 404, message: '你访问的漫画不存在' }
+        if (!this.ctx.session.userInfo) return { code: -400, message: '该用户未登录' };
+        // 从缓存获取用户id
+        let { uid } = this.ctx.session.userInfo;
+        // let uid = 1;
+        // 查看用户是否重复关注同一漫画
+        let isFollowSql = `select * from follow where uid="${uid}"`;
+        let result = await this.ctx.app.mysql.query(isFollowSql);
+        // 根据查询结果
+        for (var i = 0; i < result.length; i++) {
+            // 根据查询结果
+            if (result[i].uid === uid && result[i].cid == cartonId && result[i].status === -1) {
+                return { code: -6001, message: '取消关注失败' }
+            }
+        }
+        // 更新关注表中
+        let followSql = `update follow set status=-1 where cid="${cartonId}" and uid="${uid}"`;
+        try {
+            await this.ctx.app.mysql.query(followSql);
+        } catch (e) {
+            return { code: -5002, message: '数据更新失败，参数不完整或填写错误' }
+        }
+        // 把刚刚更新的关注表返回出去
+        let res = await this.ctx.app.mysql.query(`select * from follow where cid="${cartonId}" and uid="${uid}"`);
+
+        return { code: 200, data: res[0], message: '取消关注成功' };
+    }
+    // 用户关注漫画展示
+    async userFollow() {
+        if (!this.ctx.session.userInfo) return { code: -400, message: '该用户未登录' };
+        let { uid } = this.ctx.session.userInfo;
+        // 查询语句
+        let followSql = `
+        select * from (select c.fid,c._id,c.cover,c.profile,c.cartonTitle,c.owner,c.finished,c.imgs,c.introduce,
+            c.views,c.likes,c.comments,c.uid,c.followCreate_at,c.status,u.username,u.avatar,u.email from 
+            (select c._id,c.cover,c.profile,c.cartonTitle,c.owner,c.finished,c.imgs,c.introduce,
+            c.views,c.likes,c.comments,f.fid,f.uid,f.followCreate_at,f.status from follow f
+            left join carton c 
+            on c._id=f.cid) c
+            left join user u
+            on c.uid=u.uid) r group by r.followCreate_at desc having r.uid="${uid}"
+            limit 0, 20
+        `;
+        try {
+            var cartons = await this.ctx.app.mysql.query(followSql);
+        } catch (e) {
+            return { code: -2000, message: '系统繁忙，请稍后再试' }
+        }
+        if (JSON.stringify(cartons) === '[]') return { code: 404, message: '你还没有关注漫画哟！赶快去关注' }
+        return { code: 200, data: cartons };
+    }
+
 }
 module.exports = CartonService;

@@ -20,7 +20,7 @@ module.exports = appInfo => {
   }
   config.session = {
     key: 'SESSION_ID',  // 设置session cookie里面的key
-    maxAge: 1000*60*30, // 设置过期时间
+    maxAge: 1000 * 60 * 30, // 设置过期时间
     httpOnly: true,
     encrypt: true,
     // renew: true         // renew等于true 那么每次刷新页面的时候 session都会被延期
@@ -35,11 +35,17 @@ module.exports = appInfo => {
       database: "project"
     }
   }
-  config.multipart = {
-    mode: 'file'
-  }
+  // config.multipart = {
+  //   mode: 'file',
+  //   // fields: '100',//表单上传字段限制的个数
+  //   // fileSize: '500mb',//文件上传的大小限制
+  // }
+  // config.bodyParser = {
+  //   jsonLimit: '100mb',
+  //   formLimit: '1024mb',
+  // };
   config.cors = {
-    // origin: 'http://192.168.2.82',
+    // origin: 'http://127.0.0.1:8080',
     origin: '*'
     // credentials: true
   }

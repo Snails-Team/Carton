@@ -59,6 +59,18 @@ class CartonController extends Controller {
         let result = await this.ctx.service.carton.updated();
         this.ctx.body = result;
     }
+    // 根据二级筛选漫画 分类和完结
+    async screen() {
+        // 接受客户端的参数
+        let result = await this.ctx.service.carton.screen(this.ctx.request.query);
+        this.ctx.body = result;
+    }
+    // 根据用户发表漫画查询
+    async publish() {
+        // 接受客户端的参数
+        let result = await this.ctx.service.carton.publish(this.ctx.params);
+        this.ctx.body = result;
+    }
     // 根据关键字查询漫画
     async search() {
         // 路由匹配参数
@@ -77,7 +89,24 @@ class CartonController extends Controller {
         let result = await this.ctx.service.carton.cancelLike(this.ctx.params);
         this.ctx.body = result;
     }
-    
+    // 漫画关注
+    async followCarton() {
+        // 路由匹配参数
+        let result = await this.ctx.service.carton.followCarton(this.ctx.params);
+        this.ctx.body = result;
+    }
+    // 漫画取消关注
+    async cancelFollow() {
+        // 路由匹配参数
+        let result = await this.ctx.service.carton.cancelFollow(this.ctx.params);
+        this.ctx.body = result;
+    }
+    // 获取用户关注漫画
+    async userFollow() {
+
+        let result = await this.ctx.service.carton.userFollow();
+        this.ctx.body = result;
+    }
 }
 
 module.exports = CartonController;
